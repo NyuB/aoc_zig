@@ -35,25 +35,25 @@ const Draw = struct {
         return Draw{ .red = red, .green = green, .blue = blue };
     }
 
-    pub fn parse(allocator: std.mem.Allocator, s: String) Draw {
-        const nb_colors = lib.split_str_exn(allocator, s, ", ");
-        defer nb_colors.deinit();
+    pub fn parse(s: String) Draw {
+        const nb_colors = lib.split_n_str(3, s, ", ");
         var red: i32 = 0;
         var green: i32 = 0;
         var blue: i32 = 0;
-        for (nb_colors.items) |nb_color| {
-            const n_c = lib.split_str_exn(allocator, nb_color, " ");
-            defer n_c.deinit();
-            const count = lib.int_of_string_exn(n_c.items[0]);
-            const color = n_c.items[1];
-            if (lib.starts_with("red", color)) {
-                red = count;
-            }
-            if (lib.starts_with("green", color)) {
-                green = count;
-            }
-            if (lib.starts_with("blue", color)) {
-                blue = count;
+        for (nb_colors) |nb_color_opt| {
+            if (nb_color_opt) |nb_color| {
+                const n_c = lib.split_n_str(2, nb_color, " ");
+                const count = lib.int_of_string_exn(n_c[0] orelse unreachable);
+                const color = n_c[1] orelse unreachable;
+                if (lib.starts_with("red", color)) {
+                    red = count;
+                }
+                if (lib.starts_with("green", color)) {
+                    green = count;
+                }
+                if (lib.starts_with("blue", color)) {
+                    blue = count;
+                }
             }
         }
         return rgb(red, green, blue);
@@ -93,7 +93,7 @@ const Game = struct {
 
         var draws = std.ArrayList(Draw).init(allocator);
         for (draws_str.items) |ds| {
-            try draws.append(Draw.parse(allocator, ds));
+            try draws.append(Draw.parse(ds));
         }
 
         const id = lib.int_of_string_exn(g_id.items[1]);
@@ -129,11 +129,11 @@ test "Golden Test Part Two" {
 }
 
 test "Draw.Parse" {
-    try std.testing.expectEqual(Draw{ .red = 3, .green = 0, .blue = 0 }, Draw.parse(std.testing.allocator, "3 red"));
-    try std.testing.expectEqual(Draw{ .red = 3, .green = 2, .blue = 0 }, Draw.parse(std.testing.allocator, "3 red, 2 green"));
-    try std.testing.expectEqual(Draw{ .red = 3, .green = 2, .blue = 4 }, Draw.parse(std.testing.allocator, "3 red, 2 green, 4 blue"));
-    try std.testing.expectEqual(Draw{ .red = 3, .green = 0, .blue = 4 }, Draw.parse(std.testing.allocator, "3 red, 4 blue"));
-    try std.testing.expectEqual(Draw{ .red = 4, .green = 3, .blue = 0 }, Draw.parse(std.testing.allocator, "3 green, 4 red"));
+    try std.testing.expectEqual(Draw{ .red = 3, .green = 0, .blue = 0 }, Draw.parse("3 red"));
+    try std.testing.expectEqual(Draw{ .red = 3, .green = 2, .blue = 0 }, Draw.parse("3 red, 2 green"));
+    try std.testing.expectEqual(Draw{ .red = 3, .green = 2, .blue = 4 }, Draw.parse("3 red, 2 green, 4 blue"));
+    try std.testing.expectEqual(Draw{ .red = 3, .green = 0, .blue = 4 }, Draw.parse("3 red, 4 blue"));
+    try std.testing.expectEqual(Draw{ .red = 4, .green = 3, .blue = 0 }, Draw.parse("3 green, 4 red"));
 }
 
 test "Game.Parse" {

@@ -63,6 +63,31 @@ pub fn split_str(allocator: std.mem.Allocator, s: String, comptime delimiter: St
     return result;
 }
 
+/// Return the `n`first parts of a split of the string `s` on `delimiter`
+///
+/// `delimiter` must be non-empty
+///
+/// Examples
+///
+/// split_n_str(2, "A; B; C", "; ") <=> { "A", "B" }
+///
+/// split_n_str(3, "A; B", "; ") <=> { "A", "B", null }
+pub fn split_n_str(comptime n: usize, s: String, comptime delimiter: String) [n]?String {
+    comptime if (delimiter.len == 0) {
+        @compileError("Forbidden usage of empty delimiter");
+    };
+    var res: [n]?String = undefined;
+    var it = std.mem.splitSequence(u8, s, delimiter);
+    for (0..n) |i| {
+        if (it.next()) |sub_str| {
+            res[i] = sub_str;
+        } else {
+            res[i] = null;
+        }
+    }
+    return res;
+}
+
 pub fn split_str_exn(allocator: std.mem.Allocator, s: String, comptime delimiter: String) std.ArrayList(String) {
     return split_str(allocator, s, delimiter) catch unreachable;
 }
@@ -78,6 +103,18 @@ test "Split on ' '" {
     try std.testing.expectEqualStrings("Ho", res.items[0]);
     try std.testing.expectEqualStrings("ho", res.items[1]);
     try std.testing.expectEqualStrings("hO", res.items[2]);
+}
+
+test "split_n_str no delimiter ocurrence" {
+    const res = split_n_str(2, "ABC", ";");
+    try std.testing.expectEqualStrings("ABC", res[0] orelse unreachable);
+    try std.testing.expectEqual(res[1], null);
+}
+
+test "split_n_str 2 delimiters 2 items asked" {
+    const res = split_n_str(2, "A;B;C", ";");
+    try std.testing.expectEqualStrings("A", res[0] orelse unreachable);
+    try std.testing.expectEqualStrings("B", res[1] orelse unreachable);
 }
 
 test "Split empty string" {
