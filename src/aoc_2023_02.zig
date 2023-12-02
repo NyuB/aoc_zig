@@ -105,11 +105,7 @@ const Game = struct {
     }
 
     pub fn minimal_draw_required(g: Game) Draw {
-        var res = Draw.rgb(0, 0, 0);
-        for (g.draws.items) |d| {
-            res = res.merge_max(d);
-        }
-        return res;
+        return lib.fold_left(Draw, Draw, Draw.merge_max, Draw.rgb(0, 0, 0), g.draws.items);
     }
 
     pub fn possible_given_available(attempt: Game, available: Draw) bool {

@@ -31,6 +31,14 @@ pub fn for_lines(comptime ReturnType: type, comptime file_path: Path, comptime F
     return Fun(lines);
 }
 
+pub fn fold_left(comptime Result: type, comptime Item: type, comptime Reduce: *const fn (Result, Item) Result, init: Result, items: []Item) Result {
+    var res = init;
+    for (items) |item| {
+        res = Reduce(res, item);
+    }
+    return res;
+}
+
 pub fn starts_with(prefix: String, s: String) bool {
     if (prefix.len > s.len) {
         return false;
