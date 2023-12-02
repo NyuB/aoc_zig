@@ -64,23 +64,23 @@ fn digit_likes_of_string(s: String) [2]u8 {
     for (s, 0..) |c, index| {
         var d = digit(c);
         const sub_string = s[index..];
-        if (starts_with("one", sub_string)) {
+        if (lib.starts_with("one", sub_string)) {
             d = 1;
-        } else if (starts_with("two", sub_string)) {
+        } else if (lib.starts_with("two", sub_string)) {
             d = 2;
-        } else if (starts_with("three", sub_string)) {
+        } else if (lib.starts_with("three", sub_string)) {
             d = 3;
-        } else if (starts_with("four", sub_string)) {
+        } else if (lib.starts_with("four", sub_string)) {
             d = 4;
-        } else if (starts_with("five", sub_string)) {
+        } else if (lib.starts_with("five", sub_string)) {
             d = 5;
-        } else if (starts_with("six", sub_string)) {
+        } else if (lib.starts_with("six", sub_string)) {
             d = 6;
-        } else if (starts_with("seven", sub_string)) {
+        } else if (lib.starts_with("seven", sub_string)) {
             d = 7;
-        } else if (starts_with("eight", sub_string)) {
+        } else if (lib.starts_with("eight", sub_string)) {
             d = 8;
-        } else if (starts_with("nine", sub_string)) {
+        } else if (lib.starts_with("nine", sub_string)) {
             d = 9;
         }
         if (d > 0) {
@@ -91,18 +91,6 @@ fn digit_likes_of_string(s: String) [2]u8 {
         }
     }
     return [2]u8{ first, last };
-}
-
-fn starts_with(prefix: String, suffix: String) bool {
-    if (prefix.len > suffix.len) {
-        return false;
-    }
-    for (prefix, 0..) |value, index| {
-        if (suffix[index] != value) {
-            return false;
-        }
-    }
-    return true;
 }
 
 // Tests
