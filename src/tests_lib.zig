@@ -68,6 +68,15 @@ pub fn fold_left(comptime Result: type, comptime Item: type, comptime Reduce: *c
     return res;
 }
 
+pub fn any(comptime Item: type, comptime Predicate: *const fn (Item) bool, items: []Item) bool {
+    for (items) |item| {
+        if (Predicate(item)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 pub fn starts_with(prefix: String, s: String) bool {
     if (prefix.len > s.len) {
         return false;

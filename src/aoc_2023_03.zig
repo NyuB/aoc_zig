@@ -18,17 +18,49 @@ pub fn solve_part_one(allocator: std.mem.Allocator, lines: std.ArrayList(String)
 fn scanParts(allocator: std.mem.Allocator, grid: Grid) !std.ArrayList(i32) {
     var res = std.ArrayList(i32).init(allocator);
     for (0..grid.height) |row| {
-        const partsInRow = try scanPartsInRow(allocator, grid, row);
-        defer partsInRow.deinit();
-        for (partsInRow.items) |p| {
-            try res.append(p);
-        }
+        try scanPartsInRow(grid, row, &res);
     }
     return res;
 }
 
-fn scanPartsInRow(allocator: std.mem.Allocator, grid: Grid, row: usize) !std.ArrayList(i32) {
-    var res = std.ArrayList(i32).init(allocator);
+fn scanPartsInRow(grid: Grid, row: usize, into: *std.ArrayList(i32)) !void {
+    var digitChunk: ?Grid.Chunk = null;
+    for (0..grid.width) |c| {
+        switch (grid.at(row, c)) {
+            .Digit => |_| {
+                if (digitChunk) |*chunk| {
+                    chunk.extend();
+                } else {
+                    digitChunk = Grid.Chunk{ .row = row, .col_start = c, .col_end = c };
+                }
+            },
+            else => {
+                try appendChunkIfPresentAndSymbol(grid, digitChunk, into);
+                digitChunk = null;
+            },
+        }
+    }
+    try appendChunkIfPresentAndSymbol(grid, digitChunk, into);
+}
+
+pub fn solve_part_two(allocator: std.mem.Allocator, lines: std.ArrayList(String)) i32 {
+    var grid = Grid.parse(allocator, lines) catch unreachable;
+    defer grid.deinit();
+    var gears = scanGears(allocator, grid) catch unreachable;
+    defer gears.deinit();
+    return sumGears(gears);
+}
+
+const ScanType = struct { map: *GearMap, grid: Grid, chunk: Grid.Chunk };
+fn scanGears(allocator: std.mem.Allocator, grid: Grid) !GearMap {
+    var res = GearMap.init(allocator);
+    for (0..grid.height) |row| {
+        try scanGearsInRow(grid, row, &res);
+    }
+    return res;
+}
+
+fn scanGearsInRow(grid: Grid, row: usize, map: *GearMap) !void {
     var digitChunk: ?Grid.Chunk = null;
     for (0..grid.width) |c| {
         switch (grid.at(row, c)) {
@@ -41,22 +73,72 @@ fn scanPartsInRow(allocator: std.mem.Allocator, grid: Grid, row: usize) !std.Arr
                 }
             },
             else => {
-                try appendChunkIfPresentAndSymbol(grid, digitChunk, &res);
+                if (digitChunk) |chunk| {
+                    var acc = ScanType{ .map = map, .grid = grid, .chunk = chunk };
+                    _ = grid.forEachTileAroundChunk(*ScanType, scanGearItem, &acc, chunk);
+                }
                 digitChunk = null;
             },
         }
     }
-    try appendChunkIfPresentAndSymbol(grid, digitChunk, &res);
+    if (digitChunk) |chunk| {
+        var acc = ScanType{ .map = map, .grid = grid, .chunk = chunk };
+        _ = grid.forEachTileAroundChunk(*ScanType, scanGearItem, &acc, chunk);
+    }
+}
+
+fn scanGearItem(acc: *ScanType, rowCol: RowCol, tile: Tile) *ScanType {
+    switch (tile) {
+        .Symbol => |s| {
+            if (s == '*') {
+                const findOpt = acc.map.get(rowCol);
+                if (findOpt) |gear| {
+                    switch (gear) {
+                        .OneChunk => |i| {
+                            acc.map.put(rowCol, GearCandidate{ .TwoChunks = i * chunkAsNumber(acc.grid, acc.chunk) }) catch unreachable;
+                        },
+                        else => {
+                            acc.map.put(rowCol, GearCandidate{ .MoreThanTwoChunks = {} }) catch unreachable;
+                        },
+                    }
+                } else {
+                    acc.map.put(rowCol, GearCandidate{ .OneChunk = chunkAsNumber(acc.grid, acc.chunk) }) catch unreachable;
+                }
+            }
+        },
+        else => {},
+    }
+    return acc;
+}
+
+fn sumGears(map: GearMap) i32 {
+    var it = map.valueIterator();
+    var res: i32 = 0;
+    while (it.next()) |g| {
+        switch (g.*) {
+            .TwoChunks => |i| {
+                res += i;
+            },
+            else => {},
+        }
+    }
     return res;
 }
 
 fn appendChunkIfPresentAndSymbol(grid: Grid, chunk: ?Grid.Chunk, into: *std.ArrayList(i32)) !void {
     if (chunk) |c| {
-        if (grid.anyAroundChunk(isSymbol, c)) {
+        if (atLeastOneSymbolAroundChunk(grid, c)) {
             try into.append(chunkAsNumber(grid, c));
         }
     }
 }
+
+const RowCol = struct { row: usize, col: usize };
+
+const GearCandidateTag = enum { OneChunk, TwoChunks, MoreThanTwoChunks };
+const GearCandidate = union(GearCandidateTag) { OneChunk: i32, TwoChunks: i32, MoreThanTwoChunks };
+
+const GearMap = std.AutoHashMap(RowCol, GearCandidate);
 
 const TileTag = enum {
     Digit,
@@ -115,35 +197,32 @@ const Grid = struct {
         return grid.tiles[row][column];
     }
 
-    pub fn anyAroundChunk(grid: Grid, comptime Match: *const fn (Tile) bool, chunk: Chunk) bool {
+    pub fn forEachTileAroundChunk(grid: Grid, comptime Result: type, comptime Do: *const fn (Result, RowCol, Tile) Result, init: Result, chunk: Chunk) Result {
         const startCol = if (chunk.col_start == 0) 0 else chunk.col_start - 1;
         const endCol = if (chunk.col_end == grid.width - 1) grid.width - 1 else chunk.col_end + 1;
+        var res = init;
         if (chunk.row > 0) {
             const topRow = chunk.row - 1;
             for (startCol..endCol + 1) |c| {
-                if (Match(grid.at(topRow, c))) {
-                    return true;
-                }
+                res = Do(res, RowCol{ .row = topRow, .col = c }, grid.at(topRow, c));
             }
         }
 
         if (chunk.row < grid.height - 1) {
             const botRow = chunk.row + 1;
             for (startCol..endCol + 1) |c| {
-                if (Match(grid.at(botRow, c))) {
-                    return true;
-                }
+                res = Do(res, RowCol{ .row = botRow, .col = c }, grid.at(botRow, c));
             }
         }
 
-        if (chunk.col_start > 0 and Match(grid.at(chunk.row, chunk.col_start - 1))) {
-            return true;
+        if (chunk.col_start > 0) {
+            res = Do(res, RowCol{ .row = chunk.row, .col = chunk.col_start - 1 }, grid.at(chunk.row, chunk.col_start - 1));
         }
 
-        if (chunk.col_end < grid.width - 1 and Match(grid.at(chunk.row, chunk.col_end + 1))) {
-            return true;
+        if (chunk.col_end < grid.width - 1) {
+            res = Do(res, RowCol{ .row = chunk.row, .col = chunk.col_end + 1 }, grid.at(chunk.row, chunk.col_end + 1));
         }
-        return false;
+        return res;
     }
 
     const Chunk = struct {
@@ -166,6 +245,19 @@ fn isSymbol(tile: Tile) bool {
     };
 }
 
+fn setTrueIfSymbol(acc: *bool, _: RowCol, t: Tile) *bool {
+    if (isSymbol(t)) {
+        acc.* = true;
+    }
+    return acc;
+}
+
+fn atLeastOneSymbolAroundChunk(grid: Grid, chunk: Grid.Chunk) bool {
+    var res = false;
+    _ = grid.forEachTileAroundChunk(*bool, setTrueIfSymbol, &res, chunk);
+    return res;
+}
+
 fn chunkAsNumber(grid: Grid, chunk: Grid.Chunk) i32 {
     var res: i32 = 0;
     for (chunk.col_start..chunk.col_end + 1) |c| {
@@ -185,6 +277,11 @@ test "Golden test Part One" {
     try std.testing.expectEqual(@as(i32, 544664), res);
 }
 
+test "Golden test Part Two" {
+    const res = try lib.for_lines_allocating(i32, std.testing.allocator, "problems/03.txt", solve_part_two);
+    try std.testing.expectEqual(@as(i32, 84495585), res);
+}
+
 test "Example Part One" {
     var lines = std.ArrayList(String).init(std.testing.allocator);
     defer lines.deinit();
@@ -201,6 +298,24 @@ test "Example Part One" {
 
     const expected: i32 = 4361;
     try std.testing.expectEqual(expected, solve_part_one(std.testing.allocator, lines));
+}
+
+test "Example Part Two" {
+    var lines = std.ArrayList(String).init(std.testing.allocator);
+    defer lines.deinit();
+    try lines.append("467..114..");
+    try lines.append("...*......");
+    try lines.append("..35..633.");
+    try lines.append("......#...");
+    try lines.append("617*......");
+    try lines.append(".....+.58.");
+    try lines.append("..592.....");
+    try lines.append("......755.");
+    try lines.append("...$.*....");
+    try lines.append(".664.598..");
+
+    const expected: i32 = 467835;
+    try std.testing.expectEqual(expected, solve_part_two(std.testing.allocator, lines));
 }
 
 test "Grid.parse" {
@@ -236,10 +351,10 @@ test "Grid.anyAroundChunk" {
     const chunkMid = Grid.Chunk{ .row = 3, .col_start = 2, .col_end = 2 };
     const chunkBotLeft = Grid.Chunk{ .row = 5, .col_start = 0, .col_end = 2 };
     const chunkBotRight = Grid.Chunk{ .row = 5, .col_start = 5, .col_end = 5 };
-    try std.testing.expectEqual(true, grid.anyAroundChunk(isSymbol, chunkTop));
-    try std.testing.expectEqual(true, grid.anyAroundChunk(isSymbol, chunkMid));
-    try std.testing.expectEqual(false, grid.anyAroundChunk(isSymbol, chunkBotLeft));
-    try std.testing.expectEqual(true, grid.anyAroundChunk(isSymbol, chunkBotRight));
+    try std.testing.expectEqual(true, atLeastOneSymbolAroundChunk(grid, chunkTop));
+    try std.testing.expectEqual(true, atLeastOneSymbolAroundChunk(grid, chunkMid));
+    try std.testing.expectEqual(false, atLeastOneSymbolAroundChunk(grid, chunkBotLeft));
+    try std.testing.expectEqual(true, atLeastOneSymbolAroundChunk(grid, chunkBotRight));
 }
 
 test "chunkAsNumber" {
