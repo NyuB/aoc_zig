@@ -31,6 +31,35 @@ pub fn for_lines(comptime ReturnType: type, comptime file_path: Path, comptime F
     return Fun(lines);
 }
 
+pub fn for_lines_allocating(comptime ReturnType: type, allocator: std.mem.Allocator, comptime file_path: Path, comptime Fun: *const fn (std.mem.Allocator, std.ArrayList(String)) ReturnType) !ReturnType {
+    var file = try std.fs.cwd().openFile(file_path, .{});
+    defer file.close();
+    var lines = std.ArrayList(String).init(std.testing.allocator);
+    defer lines.deinit();
+
+    var buf_reader = std.io.bufferedReader(file.reader());
+    var read_stream = buf_reader.reader();
+    var buf_writer: [9000]u8 = undefined;
+    var write_stream = std.io.fixedBufferStream(&buf_writer);
+
+    read_stream.streamUntilDelimiter(write_stream.writer(), '\n', @as(?usize, null)) catch {};
+    while (try write_stream.getPos() > 0) {
+        const line = write_stream.getWritten();
+        const line_copy: []u8 = try allocator.alloc(u8, line.len);
+        std.mem.copy(u8, line_copy, line);
+        try lines.append(line_copy);
+        write_stream.reset();
+        read_stream.streamUntilDelimiter(write_stream.writer(), '\n', @as(?usize, null)) catch {};
+    }
+
+    defer {
+        for (lines.items) |line| {
+            std.testing.allocator.free(line);
+        }
+    }
+    return Fun(allocator, lines);
+}
+
 pub fn fold_left(comptime Result: type, comptime Item: type, comptime Reduce: *const fn (Result, Item) Result, init: Result, items: []Item) Result {
     var res = init;
     for (items) |item| {
@@ -129,4 +158,29 @@ test "Split no delimiter occurence in string" {
     defer res.deinit();
     try std.testing.expectEqual(@as(usize, 1), res.items.len);
     try std.testing.expectEqualStrings("ABC", res.items[0]);
+}
+
+// Tests correct lines splitting. In case of error of 1 character offset, check if your files do not end with CRLF instead of LF ...
+test "For lines" {
+    const lines_count = try for_lines(usize, "problems/sample.txt", count_lines);
+    const lines_len = try for_lines(usize, "problems/sample.txt", first_line_len);
+    const lines_len_alloc = try for_lines_allocating(usize, std.testing.allocator, "problems/sample.txt", first_line_len_alloc);
+    const lines_len_alloc_03 = try for_lines_allocating(usize, std.testing.allocator, "problems/03.txt", first_line_len_alloc);
+    try std.testing.expectEqual(@as(usize, 2), lines_count);
+    try std.testing.expectEqual(@as(usize, 9), lines_len);
+    try std.testing.expectEqual(@as(usize, 9), lines_len_alloc);
+    try std.testing.expectEqual(@as(usize, 140), lines_len_alloc_03);
+}
+
+fn count_lines(lines: std.ArrayList(String)) usize {
+    return lines.items.len;
+}
+
+fn first_line_len(lines: std.ArrayList(String)) usize {
+    return lines.items[0].len;
+}
+
+fn first_line_len_alloc(ingored_alloc: std.mem.Allocator, lines: std.ArrayList(String)) usize {
+    _ = ingored_alloc;
+    return lines.items[0].len;
 }
