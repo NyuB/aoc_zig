@@ -13,7 +13,7 @@ pub fn for_lines(comptime ReturnType: type, comptime file_path: Path, comptime F
     var buf_writer: [9000]u8 = undefined;
     var write_stream = std.io.fixedBufferStream(&buf_writer);
 
-    read_stream.streamUntilDelimiter(write_stream.writer(), '\n', @as(?usize, null)) catch {};
+    streamUntilEolOrEof(read_stream, write_stream.writer()) catch {};
     while (try write_stream.getPos() > 0) {
         const line = write_stream.getWritten();
         const line_copy: []u8 = try std.testing.allocator.alloc(u8, line.len);
@@ -42,14 +42,14 @@ pub fn for_lines_allocating(comptime ReturnType: type, allocator: std.mem.Alloca
     var buf_writer: [9000]u8 = undefined;
     var write_stream = std.io.fixedBufferStream(&buf_writer);
 
-    read_stream.streamUntilDelimiter(write_stream.writer(), '\n', @as(?usize, null)) catch {};
+    streamUntilEolOrEof(read_stream, write_stream.writer()) catch {};
     while (try write_stream.getPos() > 0) {
         const line = write_stream.getWritten();
         const line_copy: []u8 = try allocator.alloc(u8, line.len);
         std.mem.copy(u8, line_copy, line);
         try lines.append(line_copy);
         write_stream.reset();
-        read_stream.streamUntilDelimiter(write_stream.writer(), '\n', @as(?usize, null)) catch {};
+        streamUntilEolOrEof(read_stream, write_stream.writer()) catch {};
     }
 
     defer {
@@ -58,6 +58,15 @@ pub fn for_lines_allocating(comptime ReturnType: type, allocator: std.mem.Alloca
         }
     }
     return Fun(allocator, lines);
+}
+
+pub fn streamUntilEolOrEof(reader: anytype, writer: anytype) !void {
+    while (true) {
+        const byte: u8 = try reader.readByte(); // (Error || error{EndOfStream})
+        if (byte == '\n') return;
+        if (byte == '\r') continue;
+        try writer.writeByte(byte); // @TypeOf(writer).Error
+    }
 }
 
 pub fn fold_left(comptime Result: type, comptime Item: type, comptime Reduce: *const fn (Result, Item) Result, init: Result, items: []Item) Result {
