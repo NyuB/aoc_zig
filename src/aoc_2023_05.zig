@@ -2,8 +2,9 @@ const std = @import("std");
 const lib = @import("tests_lib.zig");
 const String = lib.String;
 
-const uResult = i64;
-const maxResult: uResult = (1 << 63) - 1;
+/// Ah, the overflow problem again ...
+const uResult = u64;
+const maxResult: uResult = 1 << 64 - 1;
 
 pub fn solve_part_one(allocator: std.mem.Allocator, lines: std.ArrayList(String)) uResult {
     const seeds = lib.split_n_str(2, lines.items[0], "seeds: ")[1] orelse unreachable;
@@ -28,34 +29,43 @@ pub fn solve_part_two(allocator: std.mem.Allocator, lines: std.ArrayList(String)
     const seeds = lib.split_n_str(2, lines.items[0], "seeds: ")[1] orelse unreachable;
     var almanac = Almanac.parse(allocator, lines.items[2..]) catch unreachable;
     defer almanac.deinit();
-    var res: ?uResult = null;
+    var bestLocation: ?uResult = null;
     var seedItems = lib.split_str(allocator, seeds, " ") catch unreachable;
     defer seedItems.deinit();
     for (0..seedItems.items.len) |i| {
-        if (i % 2 == 1) continue;
+        if (i % 2 == 1) continue; // Only consider pairs
         const start = lib.num_of_string_exn(uResult, seedItems.items[i]);
-        const range = lib.num_of_string_exn(usize, seedItems.items[i + 1]);
-        for (0..range) |seedOffset| {
-            const seed: uResult = start + @as(uResult, @intCast(seedOffset));
-            const location = almanac.convertFromSource("seed", seed, "location") orelse unreachable;
-            if (res) |current| {
-                res = @min(current, location);
+        const range = lib.num_of_string_exn(uResult, seedItems.items[i + 1]);
+        const span = Span.make(start, start + range - 1);
+
+        // Find all location values reachable with this seed span
+        const allDestinationSpans = (almanac.convertFromSourceSpan(allocator, "seed", span, "location") catch unreachable) orelse unreachable;
+        defer allDestinationSpans.deinit();
+        for (allDestinationSpans.items) |locationSpan| {
+            // Update our current best with minimal value from the reachable spans
+            if (bestLocation) |r| {
+                bestLocation = @min(r, locationSpan.start);
             } else {
-                res = location;
+                bestLocation = locationSpan.start;
             }
         }
     }
-    return res orelse unreachable;
+
+    return bestLocation orelse unreachable;
 }
 
+/// Represents a mapping of value from a source space to a destination space as stated by the AOC problem
 const MappingRange = struct {
+    /// First value of the destination span coverd by this mapping
     destinationStart: uResult,
+    /// First value of the source span covered by this mapping
     sourceStart: uResult,
+    /// Number of value coverered
     range: uResult,
 
     fn convertSourceToDestination(self: MappingRange, source: uResult) ?uResult {
         if (source >= self.sourceStart and self.sourceStart + self.range > source) {
-            return source - (self.sourceStart - self.destinationStart);
+            return (source + self.destinationStart) - self.sourceStart;
         } else return null;
     }
 
@@ -63,6 +73,13 @@ const MappingRange = struct {
         return MappingRange{ .destinationStart = d, .sourceStart = s, .range = r };
     }
 
+    fn identity(start: uResult, range: uResult) MappingRange {
+        return initSourceToDestination(start, start, range);
+    }
+
+    /// Returns a the destination span corresponding to the part of `span` covered by this mapping source span
+    ///
+    /// **null** result means source span and `span` are fully disjoints
     fn mapSpan(self: MappingRange, span: Span) ?Span {
         var selfSpan = span.intersect(Span.make(self.sourceStart, self.sourceStart + self.range - 1));
         if (selfSpan) |s| {
@@ -80,10 +97,11 @@ const MappingRange = struct {
                 return v;
             }
         }
-        // Assume all ranges will be covered
-        unreachable;
+        // If no match, return as is
+        return source;
     }
 
+    /// The reversed mapping, mapping destination to source
     fn reversed(self: MappingRange) MappingRange {
         return initSourceToDestination(self.destinationStart, self.sourceStart, self.range);
     }
@@ -96,7 +114,9 @@ const MappingRange = struct {
 
 const Almanac = struct {
     const AlmanacMap = std.StringHashMap(Conversion);
+    /// /!\ **Read only** /!\
     map: AlmanacMap,
+
     fn deinit(self: *Almanac) void {
         var values = self.map.valueIterator();
         while (values.next()) |l| {
@@ -105,10 +125,8 @@ const Almanac = struct {
         self.map.deinit();
     }
 
-    fn getConversion(self: Almanac, source: String) ?Conversion {
-        return self.map.get(source);
-    }
-
+    /// Returns the conversion `sourceType` to `destinationType` from the initial value `sourceValue`
+    /// A null result means no conversion path exists from `sourceType`to `destinationType`
     fn convertFromSource(self: Almanac, sourceType: String, sourceValue: uResult, destinationType: String) ?uResult {
         var currentType: String = sourceType;
         var current: uResult = sourceValue;
@@ -120,13 +138,16 @@ const Almanac = struct {
         return current;
     }
 
-    fn convertFromSourceSpan(self: Almanac, allocator: std.mem.Allocator, sourceType: String, sourceValue: Span, destinationType: String) !?std.ArrayList(Span) {
+    /// Returns all conversion values `sourceType` to `destinationType` from the initial values span `sourceSpan`
+    /// Result is itself expressed as a list of **Span**s
+    /// A null result means no conversion path exists from `sourceType`to `destinationType`
+    fn convertFromSourceSpan(self: Almanac, allocator: std.mem.Allocator, sourceType: String, sourceSpan: Span, destinationType: String) !?std.ArrayList(Span) {
         var current = std.ArrayList(Span).init(allocator);
-        try current.append(sourceValue);
+        try current.append(sourceSpan);
         var currentType = sourceType;
         while (!std.mem.eql(u8, currentType, destinationType)) {
             var next = std.ArrayList(Span).init(allocator);
-            var conversion = self.map.get(currentType) orelse {
+            var conversion = self.getConversion(currentType) orelse {
                 current.deinit();
                 return null;
             };
@@ -169,6 +190,8 @@ const Almanac = struct {
         return Almanac{ .map = map };
     }
 
+    /// The reversed almanac, converting from sink to source
+    /// Could be used to find the exact seed leading to the problem solution ;)
     fn reversed(self: Almanac, allocator: std.mem.Allocator) !Almanac {
         var map = AlmanacMap.init(allocator);
         var entries = self.map.iterator();
@@ -186,12 +209,20 @@ const Almanac = struct {
         }
         return Almanac{ .map = map };
     }
+
+    // Internals
+
+    fn getConversion(self: Almanac, source: String) ?Conversion {
+        return self.map.get(source);
+    }
 };
 
 const Conversion = struct {
     destination: String,
+    /// /!\ **Read only** /!\
     mappings: std.ArrayList(MappingRange),
 
+    /// Takes ownership of `mapping`
     fn init(destination: String, mappings: std.ArrayList(MappingRange)) !Conversion {
         var res = Conversion{ .mappings = mappings, .destination = destination };
         try res.completeMappings();
@@ -202,37 +233,48 @@ const Conversion = struct {
         self.mappings.deinit();
     }
 
+    // Internals
+
+    /// Used to sort mapings by start value acending order
     fn lessThan(context: @TypeOf(.{}), lhs: MappingRange, rhs: MappingRange) bool {
         _ = context;
         return lhs.sourceStart < rhs.sourceStart;
     }
 
+    /// Ensure mappings cover the entire positive i64 space
     fn completeMappings(self: *Conversion) !void {
         std.sort.pdq(MappingRange, self.mappings.items, .{}, lessThan);
-        var toAppend = std.ArrayList(MappingRange).init(self.mappings.allocator);
-        defer toAppend.deinit();
+        var nextMappings = std.ArrayList(MappingRange).init(self.mappings.allocator);
         var currentMin: uResult = 0;
         for (self.mappings.items) |mapping| {
             if (mapping.sourceStart > currentMin) {
-                var identityMapping = MappingRange.initSourceToDestination(currentMin, currentMin, mapping.sourceStart - currentMin);
-                try toAppend.append(identityMapping);
+                // Complete the missing interval with an identity mapping
+                try nextMappings.append(MappingRange.identity(currentMin, mapping.sourceStart - currentMin));
             }
-            currentMin = mapping.sourceStart + mapping.range;
+            try nextMappings.append(mapping);
+
+            const nextMin = @addWithOverflow(mapping.sourceStart, mapping.range);
+            currentMin = if (nextMin[1] != 0) maxResult else nextMin[0];
         }
         if (currentMin < maxResult) {
             var identityMapping = MappingRange.initSourceToDestination(currentMin, currentMin, maxResult - currentMin);
-            try toAppend.append(identityMapping);
+            try nextMappings.append(identityMapping);
         }
-        for (toAppend.items) |add| {
-            try self.mappings.append(add);
-        }
+        self.mappings.deinit();
+        self.mappings = nextMappings;
     }
 };
 
+/// A non-empty range of values
+///
+/// Use `Span.make(a,b)` to build safely
 const Span = struct {
     start: uResult,
     end: uResult,
 
+    /// Returns the values of `self` which are also values of `other`
+    ///
+    /// **null** result mean the two spans are fully disjoints
     fn intersect(self: Span, other: Span) ?Span {
         if (self.equals(other)) return self;
         if (self.start > other.end or other.start > self.end) return null;
@@ -241,9 +283,12 @@ const Span = struct {
         return Span.make(@max(self.start, other.start), @min(self.end, other.end));
     }
 
+    /// Build a Span with start <= end (if `a > b`, `a` will become `end` and `b` will become `start`)
     fn make(a: uResult, b: uResult) Span {
         return Span{ .start = @min(a, b), .end = @max(a, b) };
     }
+
+    // Internals
 
     fn equals(self: Span, other: Span) bool {
         return self.start == other.start and self.end == other.end;
@@ -255,138 +300,46 @@ test "Golden Test Part One" {
     try std.testing.expectEqual(@as(uResult, 910845529), res);
 }
 
-// test "Golden Test Part Two" {
-//     const res = try lib.for_lines_allocating(uResult, std.testing.allocator, "problems/05.txt", solve_part_two);
-//     try std.testing.expectEqual(@as(uResult, 0), res);
-// }
+test "Golden Test Part Two" {
+    const res = try lib.for_lines_allocating(uResult, std.testing.allocator, "problems/05.txt", solve_part_two);
+    try std.testing.expectEqual(@as(uResult, 77435348), res);
+}
 
 test "Example Part One" {
-    var lines = std.ArrayList(String).init(std.testing.allocator);
+    var lines = try example();
     defer lines.deinit();
-    try lines.append("seeds: 79 14 55 13");
-    try lines.append("");
-    try lines.append("seed-to-soil map:");
-    try lines.append("50 98 2");
-    try lines.append("52 50 48");
-    try lines.append("");
-    try lines.append("soil-to-fertilizer map:");
-    try lines.append("0 15 37");
-    try lines.append("37 52 2");
-    try lines.append("39 0 15");
-    try lines.append("");
-    try lines.append("fertilizer-to-water map:");
-    try lines.append("49 53 8");
-    try lines.append("0 11 42");
-    try lines.append("42 0 7");
-    try lines.append("57 7 4");
-    try lines.append("");
-    try lines.append("water-to-light map:");
-    try lines.append("88 18 7");
-    try lines.append("18 25 70");
-    try lines.append("");
-    try lines.append("light-to-temperature map:");
-    try lines.append("45 77 23");
-    try lines.append("81 45 19");
-    try lines.append("68 64 13");
-    try lines.append("");
-    try lines.append("temperature-to-humidity map:");
-    try lines.append("0 69 1");
-    try lines.append("1 0 69");
-    try lines.append("");
-    try lines.append("humidity-to-location map:");
-    try lines.append("60 56 37");
-    try lines.append("56 93 4");
     const res = solve_part_one(std.testing.allocator, lines);
     try std.testing.expectEqual(@as(uResult, 35), res);
 }
 
 test "Example Part Two" {
-    var lines = std.ArrayList(String).init(std.testing.allocator);
+    var lines = try example();
     defer lines.deinit();
-    try lines.append("seeds: 79 14 55 13");
-    try lines.append("");
-    try lines.append("seed-to-soil map:");
-    try lines.append("50 98 2");
-    try lines.append("52 50 48");
-    try lines.append("");
-    try lines.append("soil-to-fertilizer map:");
-    try lines.append("0 15 37");
-    try lines.append("37 52 2");
-    try lines.append("39 0 15");
-    try lines.append("");
-    try lines.append("fertilizer-to-water map:");
-    try lines.append("49 53 8");
-    try lines.append("0 11 42");
-    try lines.append("42 0 7");
-    try lines.append("57 7 4");
-    try lines.append("");
-    try lines.append("water-to-light map:");
-    try lines.append("88 18 7");
-    try lines.append("18 25 70");
-    try lines.append("");
-    try lines.append("light-to-temperature map:");
-    try lines.append("45 77 23");
-    try lines.append("81 45 19");
-    try lines.append("68 64 13");
-    try lines.append("");
-    try lines.append("temperature-to-humidity map:");
-    try lines.append("0 69 1");
-    try lines.append("1 0 69");
-    try lines.append("");
-    try lines.append("humidity-to-location map:");
-    try lines.append("60 56 37");
-    try lines.append("56 93 4");
     const res = solve_part_two(std.testing.allocator, lines);
     try std.testing.expectEqual(@as(uResult, 46), res);
 }
 
 test "Almanac" {
-    var lines = std.ArrayList(String).init(std.testing.allocator);
+    var lines = try example();
     defer lines.deinit();
-    try lines.append("seed-to-soil map:");
-    try lines.append("50 98 2");
-    try lines.append("52 50 48");
-    try lines.append("");
-    try lines.append("soil-to-fertilizer map:");
-    try lines.append("0 15 37");
-    try lines.append("37 52 2");
-    try lines.append("39 0 15");
-    try lines.append("");
-    try lines.append("fertilizer-to-water map:");
-    try lines.append("49 53 8");
-    try lines.append("0 11 42");
-    try lines.append("42 0 7");
-    try lines.append("57 7 4");
-    try lines.append("");
-    try lines.append("water-to-light map:");
-    try lines.append("88 18 7");
-    try lines.append("18 25 70");
-    try lines.append("");
-    try lines.append("light-to-temperature map:");
-    try lines.append("45 77 23");
-    try lines.append("81 45 19");
-    try lines.append("68 64 13");
-    try lines.append("");
-    try lines.append("temperature-to-humidity map:");
-    try lines.append("0 69 1");
-    try lines.append("1 0 69");
-    try lines.append("");
-    try lines.append("humidity-to-location map:");
-    try lines.append("60 56 37");
-    try lines.append("56 93 4");
-    var almanac = try Almanac.parse(std.testing.allocator, lines.items);
+
+    var almanac = try Almanac.parse(std.testing.allocator, lines.items[2..]);
     defer almanac.deinit();
+
     var reversed = try almanac.reversed(std.testing.allocator);
     defer reversed.deinit();
+
     try std.testing.expect(almanac.map.count() == 7);
     var seedToSoil = almanac.convertFromSource("seed", 98, "soil") orelse unreachable;
     var soilToSeed = reversed.convertFromSource("soil", 50, "seed") orelse unreachable;
     try std.testing.expectEqual(@as(uResult, 50), seedToSoil);
     try std.testing.expectEqual(@as(uResult, 98), soilToSeed);
+
     var convertedSpan = try almanac.convertFromSourceSpan(std.testing.allocator, "seed", Span.make(60, 63), "soil") orelse unreachable;
     defer convertedSpan.deinit();
     try std.testing.expectEqual(@as(usize, 1), convertedSpan.items.len);
     try std.testing.expectEqual(Span.make(62, 65), convertedSpan.items[0]);
+
     var overlappingSpan = try almanac.convertFromSourceSpan(std.testing.allocator, "water", Span.make(24, 25), "light") orelse unreachable;
     defer overlappingSpan.deinit();
     try std.testing.expectEqual(@as(usize, 2), overlappingSpan.items.len);
@@ -453,4 +406,68 @@ test "span not intersecting" {
     const intersectionRightLeft = right.intersect(left);
     try std.testing.expectEqual(@as(?Span, null), intersectionLeftRight);
     try std.testing.expectEqual(@as(?Span, null), intersectionRightLeft);
+}
+
+test "Conversion at boundaries first span already covered" {
+    const mappingCoveringMinResult = MappingRange.initSourceToDestination(0, 0, 1);
+    var singleton = std.ArrayList(MappingRange).init(std.testing.allocator);
+    try singleton.append(mappingCoveringMinResult);
+    var conversion = try Conversion.init("whatever", singleton);
+    defer conversion.deinit();
+    try std.testing.expectEqual(@as(usize, 2), conversion.mappings.items.len);
+    // initial mapping is preserved
+    try std.testing.expectEqual(mappingCoveringMinResult, conversion.mappings.items[0]);
+    // mappings completed with missing right span, as identity mapping
+    try std.testing.expectEqual(MappingRange.initSourceToDestination(1, 1, maxResult - 1), conversion.mappings.items[1]);
+}
+
+test "Conversion at boundaries last span already covered" {
+    const mappingCoveringMaxResult = MappingRange.initSourceToDestination(maxResult - 2, 0, 3);
+    var singleton = std.ArrayList(MappingRange).init(std.testing.allocator);
+    try singleton.append(mappingCoveringMaxResult);
+    var conversion = try Conversion.init("whatever", singleton);
+    defer conversion.deinit();
+    try std.testing.expectEqual(@as(usize, 2), conversion.mappings.items.len);
+    // mappings completed with missing left span, as identity mapping
+    try std.testing.expectEqual(MappingRange.initSourceToDestination(0, 0, maxResult - 2), conversion.mappings.items[0]);
+    // initial mapping is preserved
+    try std.testing.expectEqual(mappingCoveringMaxResult, conversion.mappings.items[1]);
+}
+
+fn example() !std.ArrayList(String) {
+    var lines = std.ArrayList(String).init(std.testing.allocator);
+    try lines.append("seeds: 79 14 55 13");
+    try lines.append("");
+    try lines.append("seed-to-soil map:");
+    try lines.append("50 98 2");
+    try lines.append("52 50 48");
+    try lines.append("");
+    try lines.append("soil-to-fertilizer map:");
+    try lines.append("0 15 37");
+    try lines.append("37 52 2");
+    try lines.append("39 0 15");
+    try lines.append("");
+    try lines.append("fertilizer-to-water map:");
+    try lines.append("49 53 8");
+    try lines.append("0 11 42");
+    try lines.append("42 0 7");
+    try lines.append("57 7 4");
+    try lines.append("");
+    try lines.append("water-to-light map:");
+    try lines.append("88 18 7");
+    try lines.append("18 25 70");
+    try lines.append("");
+    try lines.append("light-to-temperature map:");
+    try lines.append("45 77 23");
+    try lines.append("81 45 19");
+    try lines.append("68 64 13");
+    try lines.append("");
+    try lines.append("temperature-to-humidity map:");
+    try lines.append("0 69 1");
+    try lines.append("1 0 69");
+    try lines.append("");
+    try lines.append("humidity-to-location map:");
+    try lines.append("60 56 37");
+    try lines.append("56 93 4");
+    return lines;
 }
