@@ -8,27 +8,36 @@ pub fn for_lines(comptime ReturnType: type, comptime file_path: Path, comptime F
     var lines = std.ArrayList(String).init(std.testing.allocator);
     defer lines.deinit();
 
+    defer {
+        for (lines.items) |line| {
+            std.testing.allocator.free(line);
+        }
+    }
+
     var buf_reader = std.io.bufferedReader(file.reader());
     var read_stream = buf_reader.reader();
     var buf_writer: [9000]u8 = undefined;
     var write_stream = std.io.fixedBufferStream(&buf_writer);
 
     streamUntilEolOrEof(read_stream, write_stream.writer()) catch {};
-    while (try write_stream.getPos() > 0) {
+    while (true) {
         const line = write_stream.getWritten();
         const line_copy: []u8 = try std.testing.allocator.alloc(u8, line.len);
         std.mem.copy(u8, line_copy, line);
         try lines.append(line_copy);
         write_stream.reset();
-        read_stream.streamUntilDelimiter(write_stream.writer(), '\n', @as(?usize, null)) catch {};
-    }
+        streamUntilEolOrEof(read_stream, write_stream.writer()) catch {
+            const lastLine = write_stream.getWritten();
+            if (lastLine.len > 0) {
+                const lastLineCopy: []u8 = try std.testing.allocator.alloc(u8, lastLine.len);
+                std.mem.copy(u8, lastLineCopy, lastLine);
+                try lines.append(lastLineCopy);
+            }
 
-    defer {
-        for (lines.items) |line| {
-            std.testing.allocator.free(line);
-        }
+            return Fun(lines);
+        };
     }
-    return Fun(lines);
+    unreachable;
 }
 
 pub fn for_lines_allocating(comptime ReturnType: type, allocator: std.mem.Allocator, comptime file_path: Path, comptime Fun: *const fn (std.mem.Allocator, std.ArrayList(String)) ReturnType) !ReturnType {
@@ -36,6 +45,11 @@ pub fn for_lines_allocating(comptime ReturnType: type, allocator: std.mem.Alloca
     defer file.close();
     var lines = std.ArrayList(String).init(std.testing.allocator);
     defer lines.deinit();
+    defer {
+        for (lines.items) |line| {
+            std.testing.allocator.free(line);
+        }
+    }
 
     var buf_reader = std.io.bufferedReader(file.reader());
     var read_stream = buf_reader.reader();
@@ -43,21 +57,24 @@ pub fn for_lines_allocating(comptime ReturnType: type, allocator: std.mem.Alloca
     var write_stream = std.io.fixedBufferStream(&buf_writer);
 
     streamUntilEolOrEof(read_stream, write_stream.writer()) catch {};
-    while (try write_stream.getPos() > 0) {
+    while (true) {
         const line = write_stream.getWritten();
         const line_copy: []u8 = try allocator.alloc(u8, line.len);
         std.mem.copy(u8, line_copy, line);
         try lines.append(line_copy);
         write_stream.reset();
-        streamUntilEolOrEof(read_stream, write_stream.writer()) catch {};
-    }
+        streamUntilEolOrEof(read_stream, write_stream.writer()) catch {
+            const lastLine = write_stream.getWritten();
+            if (lastLine.len > 0) {
+                const lastLineCopy: []u8 = try allocator.alloc(u8, lastLine.len);
+                std.mem.copy(u8, lastLineCopy, lastLine);
+                try lines.append(lastLineCopy);
+            }
 
-    defer {
-        for (lines.items) |line| {
-            std.testing.allocator.free(line);
-        }
+            return Fun(allocator, lines);
+        };
     }
-    return Fun(allocator, lines);
+    unreachable;
 }
 
 pub fn streamUntilEolOrEof(reader: anytype, writer: anytype) !void {
@@ -141,6 +158,10 @@ pub fn split_str_exn(allocator: std.mem.Allocator, s: String, comptime delimiter
 
 pub fn int_of_string_exn(s: String) i32 {
     return std.fmt.parseInt(i32, s, 10) catch unreachable;
+}
+
+pub fn num_of_string_exn(comptime t: type, s: String) t {
+    return std.fmt.parseInt(t, s, 10) catch unreachable;
 }
 
 test "Split on ' '" {
