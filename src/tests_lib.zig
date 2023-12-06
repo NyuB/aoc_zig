@@ -152,6 +152,38 @@ pub fn split_n_str(comptime n: usize, s: String, comptime delimiter: String) [n]
     return res;
 }
 
+pub fn split_str_on_blanks(allocator: std.mem.Allocator, s: String) !std.ArrayList(String) {
+    var res = std.ArrayList(String).init(allocator);
+    var start: usize = 0;
+    var end = start;
+    while (end < s.len) {
+        if (s[end] == ' ' or s[end] == '\t') {
+            if (start != end) {
+                try res.append(s[start..end]);
+            }
+            end += 1;
+            start = end;
+        } else {
+            end += 1;
+        }
+    }
+    if (start != end) {
+        try res.append(s[start..end]);
+    }
+    return res;
+}
+
+pub fn join(allocator: std.mem.Allocator, comptime separator: String, strings: []String) !std.ArrayList(u8) {
+    var res = std.ArrayList(u8).init(allocator);
+    if (strings.len == 0)return res;
+    try res.appendSlice(strings[0]);
+
+    for (1..strings.len) |i| {
+        try std.fmt.format(res.writer(), "{s}{s}", .{separator, strings[i]});
+    }
+    return res;
+}
+
 pub fn split_str_exn(allocator: std.mem.Allocator, s: String, comptime delimiter: String) std.ArrayList(String) {
     return split_str(allocator, s, delimiter) catch unreachable;
 }
@@ -197,6 +229,33 @@ test "Split no delimiter occurence in string" {
     defer res.deinit();
     try std.testing.expectEqual(@as(usize, 1), res.items.len);
     try std.testing.expectEqualStrings("ABC", res.items[0]);
+}
+
+test "Split on blanks" {
+    const evenlySpaced = "0 1 2";
+    const multipleSpacing = " 0 1     2 ";
+    const evenlySplit = try split_str_on_blanks(std.testing.allocator, evenlySpaced);
+    defer evenlySplit.deinit();
+    const multipleSplit = try split_str_on_blanks(std.testing.allocator, multipleSpacing);
+    defer multipleSplit.deinit();
+    try std.testing.expectEqualStrings("0", evenlySplit.items[0]);
+    try std.testing.expectEqualStrings("1", evenlySplit.items[1]);
+    try std.testing.expectEqualStrings("2", evenlySplit.items[2]);
+
+    try std.testing.expectEqualStrings("0", multipleSplit.items[0]);
+    try std.testing.expectEqualStrings("1", multipleSplit.items[1]);
+    try std.testing.expectEqualStrings("2", multipleSplit.items[2]);
+}
+
+test "Join strings" {
+    var strings = std.ArrayList(String).init(std.testing.allocator);
+    defer strings.deinit();
+    try strings.append("One");
+    try strings.append("Two");
+    try strings.append("Three");
+    var buffer = try join(std.testing.allocator, "< | >", strings.items);
+    defer buffer.deinit();
+    try std.testing.expectEqualStrings(buffer.items, "One< | >Two< | >Three");
 }
 
 // Tests correct lines splitting. In case of error of 1 character offset, check if your files do not end with CRLF instead of LF ...
