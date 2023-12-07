@@ -32,7 +32,7 @@ fn solve_part_two(allocator: std.mem.Allocator, lines: std.ArrayList(String)) in
     const concatTimes = lib.join(allocator, "", times.items[1..]) catch unreachable;
     defer concatTimes.deinit();
     const t = lib.num_of_string_exn(int, concatTimes.items);
-    const concatRecords = lib.join(allocator,"", records.items[1..]) catch unreachable;
+    const concatRecords = lib.join(allocator, "", records.items[1..]) catch unreachable;
     defer concatRecords.deinit();
     const record = lib.num_of_string_exn(int, concatRecords.items);
     const solution = solve(record + 1, t) orelse unreachable;

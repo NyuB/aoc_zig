@@ -175,11 +175,11 @@ pub fn split_str_on_blanks(allocator: std.mem.Allocator, s: String) !std.ArrayLi
 
 pub fn join(allocator: std.mem.Allocator, comptime separator: String, strings: []String) !std.ArrayList(u8) {
     var res = std.ArrayList(u8).init(allocator);
-    if (strings.len == 0)return res;
+    if (strings.len == 0) return res;
     try res.appendSlice(strings[0]);
 
     for (1..strings.len) |i| {
-        try std.fmt.format(res.writer(), "{s}{s}", .{separator, strings[i]});
+        try std.fmt.format(res.writer(), "{s}{s}", .{ separator, strings[i] });
     }
     return res;
 }
