@@ -8,4 +8,5 @@ comptime {
     _ = @import("aoc_2023_05.zig");
     _ = @import("aoc_2023_06.zig");
     _ = @import("aoc_2023_07.zig");
+    _ = @import("aoc_2023_08.zig");
 }
