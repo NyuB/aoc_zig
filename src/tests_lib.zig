@@ -165,6 +165,7 @@ pub fn split_str(allocator: std.mem.Allocator, s: String, comptime delimiter: St
         @compileError("Forbidden usage of empty delimiter");
     };
     var result = std.ArrayList(String).init(allocator);
+    errdefer result.deinit();
     var it = std.mem.splitSequence(u8, s, delimiter);
     while (it.next()) |i| {
         try result.append(i);

@@ -143,10 +143,12 @@ const Almanac = struct {
     /// A null result means no conversion path exists from `sourceType`to `destinationType`
     fn convertFromSourceSpan(self: Almanac, allocator: std.mem.Allocator, sourceType: String, sourceSpan: Span, destinationType: String) !?std.ArrayList(Span) {
         var current = std.ArrayList(Span).init(allocator);
+        errdefer current.deinit();
         try current.append(sourceSpan);
         var currentType = sourceType;
         while (!std.mem.eql(u8, currentType, destinationType)) {
             var next = std.ArrayList(Span).init(allocator);
+            errdefer next.deinit();
             var conversion = self.getConversion(currentType) orelse {
                 current.deinit();
                 return null;
@@ -194,17 +196,20 @@ const Almanac = struct {
     /// Could be used to find the exact seed leading to the problem solution ;)
     fn reversed(self: Almanac, allocator: std.mem.Allocator) !Almanac {
         var map = AlmanacMap.init(allocator);
+        errdefer map.deinit();
         var entries = self.map.iterator();
         while (entries.next()) |entry| {
             const conversion = entry.value_ptr;
             const key = entry.key_ptr;
             var reversedMapping = std.ArrayList(MappingRange).init(allocator);
+            errdefer reversedMapping.deinit();
 
             for (conversion.mappings.items) |mapping| {
                 try reversedMapping.append(mapping.reversed());
             }
 
             var reversedConversion = try Conversion.init(key.*, reversedMapping);
+            errdefer reversedConversion.deinit();
             try map.put(conversion.destination, reversedConversion);
         }
         return Almanac{ .map = map };
