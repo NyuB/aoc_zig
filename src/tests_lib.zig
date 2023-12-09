@@ -77,6 +77,17 @@ pub fn for_lines_allocating(comptime ReturnType: type, allocator: std.mem.Alloca
     unreachable;
 }
 
+test "For lines" {
+    const lines_count = try for_lines(usize, "problems/sample.txt", count_lines);
+    const lines_len = try for_lines(usize, "problems/sample.txt", first_line_len);
+    const lines_len_alloc = try for_lines_allocating(usize, std.testing.allocator, "problems/sample.txt", first_line_len_alloc);
+    const lines_len_alloc_03 = try for_lines_allocating(usize, std.testing.allocator, "problems/03.txt", first_line_len_alloc);
+    try std.testing.expectEqual(@as(usize, 2), lines_count);
+    try std.testing.expectEqual(@as(usize, 9), lines_len);
+    try std.testing.expectEqual(@as(usize, 9), lines_len_alloc);
+    try std.testing.expectEqual(@as(usize, 140), lines_len_alloc_03);
+}
+
 pub fn streamUntilEolOrEof(reader: anytype, writer: anytype) !void {
     while (true) {
         const byte: u8 = try reader.readByte(); // (Error || error{EndOfStream})
@@ -115,6 +126,40 @@ pub fn starts_with(prefix: String, s: String) bool {
     return true;
 }
 
+pub fn firstItem(items: anytype) itemTypeOf(items) {
+    return items[0];
+}
+
+test "firstItem" {
+    const items = [_]u32{ 1, 2, 3, 4 };
+    const strItems = [_]String{ "A", "B", "C" };
+    try std.testing.expect(firstItem(&items) == 1);
+    try std.testing.expect(firstItem(items) == 1);
+    try std.testing.expectEqualStrings(firstItem(&strItems), "A");
+    try std.testing.expectEqualStrings(firstItem(strItems), "A");
+}
+
+pub fn lastItem(items: anytype) itemTypeOf(items) {
+    return items[items.len - 1];
+}
+
+test "lastItem" {
+    const items = [_]u32{ 1, 2, 3, 4 };
+    const strItems = [_]String{ "A", "B", "C" };
+    try std.testing.expect(lastItem(&items) == 4);
+    try std.testing.expect(lastItem(items) == 4);
+    try std.testing.expectEqualStrings(lastItem(&strItems), "C");
+    try std.testing.expectEqualStrings(lastItem(strItems), "C");
+}
+
+fn itemTypeOf(comptime items: anytype) type {
+    return switch (@typeInfo(@TypeOf(items))) {
+        .Pointer => |p| @typeInfo(p.child).Array.child,
+        .Array => |a| a.child,
+        inline else => @compileError("Unsupported type for last item"),
+    };
+}
+
 pub fn split_str(allocator: std.mem.Allocator, s: String, comptime delimiter: String) !std.ArrayList(String) {
     comptime if (delimiter.len == 0) {
         @compileError("Forbidden usage of empty delimiter");
@@ -125,6 +170,29 @@ pub fn split_str(allocator: std.mem.Allocator, s: String, comptime delimiter: St
         try result.append(i);
     }
     return result;
+}
+
+test "Split on ' '" {
+    const res = try split_str(std.testing.allocator, "Ho ho hO", " ");
+    defer res.deinit();
+    try std.testing.expectEqual(@as(usize, 3), res.items.len);
+    try std.testing.expectEqualStrings("Ho", res.items[0]);
+    try std.testing.expectEqualStrings("ho", res.items[1]);
+    try std.testing.expectEqualStrings("hO", res.items[2]);
+}
+
+test "Split empty string" {
+    const res = try split_str(std.testing.allocator, "", " ");
+    defer res.deinit();
+    try std.testing.expectEqual(@as(usize, 1), res.items.len);
+    try std.testing.expectEqualStrings("", res.items[0]);
+}
+
+test "Split no delimiter occurence in string" {
+    const res = try split_str(std.testing.allocator, "ABC", ";");
+    defer res.deinit();
+    try std.testing.expectEqual(@as(usize, 1), res.items.len);
+    try std.testing.expectEqualStrings("ABC", res.items[0]);
 }
 
 /// Return the `n`first parts of a split of the string `s` on `delimiter`
@@ -152,6 +220,25 @@ pub fn split_n_str(comptime n: usize, s: String, comptime delimiter: String) [n]
     return res;
 }
 
+test "split_n_str no delimiter ocurrence" {
+    const res = split_n_str(2, "ABC", ";");
+    try std.testing.expectEqualStrings("ABC", res[0] orelse unreachable);
+    try std.testing.expectEqual(res[1], null);
+}
+
+test "split_n_str 2 delimiters 2 items asked" {
+    const res = split_n_str(2, "A;B;C", ";");
+    try std.testing.expectEqualStrings("A", res[0] orelse unreachable);
+    try std.testing.expectEqualStrings("B", res[1] orelse unreachable);
+}
+
+test "split_n_str 2 delimiters 3 items asked" {
+    const res = split_n_str(3, "A;B", ";");
+    try std.testing.expectEqualStrings("A", res[0] orelse unreachable);
+    try std.testing.expectEqualStrings("B", res[1] orelse unreachable);
+    try std.testing.expectEqual(@as(?String, null), res[2]);
+}
+
 pub fn split_str_on_blanks(allocator: std.mem.Allocator, s: String) !std.ArrayList(String) {
     var res = std.ArrayList(String).init(allocator);
     var start: usize = 0;
@@ -173,64 +260,6 @@ pub fn split_str_on_blanks(allocator: std.mem.Allocator, s: String) !std.ArrayLi
     return res;
 }
 
-pub fn join(allocator: std.mem.Allocator, comptime separator: String, strings: []String) !std.ArrayList(u8) {
-    var res = std.ArrayList(u8).init(allocator);
-    if (strings.len == 0) return res;
-    try res.appendSlice(strings[0]);
-
-    for (1..strings.len) |i| {
-        try std.fmt.format(res.writer(), "{s}{s}", .{ separator, strings[i] });
-    }
-    return res;
-}
-
-pub fn split_str_exn(allocator: std.mem.Allocator, s: String, comptime delimiter: String) std.ArrayList(String) {
-    return split_str(allocator, s, delimiter) catch unreachable;
-}
-
-pub fn int_of_string_exn(s: String) i32 {
-    return std.fmt.parseInt(i32, s, 10) catch unreachable;
-}
-
-pub fn num_of_string_exn(comptime t: type, s: String) t {
-    return std.fmt.parseInt(t, s, 10) catch unreachable;
-}
-
-test "Split on ' '" {
-    const res = try split_str(std.testing.allocator, "Ho ho hO", " ");
-    defer res.deinit();
-    try std.testing.expectEqual(@as(usize, 3), res.items.len);
-    try std.testing.expectEqualStrings("Ho", res.items[0]);
-    try std.testing.expectEqualStrings("ho", res.items[1]);
-    try std.testing.expectEqualStrings("hO", res.items[2]);
-}
-
-test "split_n_str no delimiter ocurrence" {
-    const res = split_n_str(2, "ABC", ";");
-    try std.testing.expectEqualStrings("ABC", res[0] orelse unreachable);
-    try std.testing.expectEqual(res[1], null);
-}
-
-test "split_n_str 2 delimiters 2 items asked" {
-    const res = split_n_str(2, "A;B;C", ";");
-    try std.testing.expectEqualStrings("A", res[0] orelse unreachable);
-    try std.testing.expectEqualStrings("B", res[1] orelse unreachable);
-}
-
-test "Split empty string" {
-    const res = try split_str(std.testing.allocator, "", " ");
-    defer res.deinit();
-    try std.testing.expectEqual(@as(usize, 1), res.items.len);
-    try std.testing.expectEqualStrings("", res.items[0]);
-}
-
-test "Split no delimiter occurence in string" {
-    const res = try split_str(std.testing.allocator, "ABC", ";");
-    defer res.deinit();
-    try std.testing.expectEqual(@as(usize, 1), res.items.len);
-    try std.testing.expectEqualStrings("ABC", res.items[0]);
-}
-
 test "Split on blanks" {
     const evenlySpaced = "0 1 2";
     const multipleSpacing = " 0 1     2 ";
@@ -247,6 +276,17 @@ test "Split on blanks" {
     try std.testing.expectEqualStrings("2", multipleSplit.items[2]);
 }
 
+pub fn join(allocator: std.mem.Allocator, comptime separator: String, strings: []String) !std.ArrayList(u8) {
+    var res = std.ArrayList(u8).init(allocator);
+    if (strings.len == 0) return res;
+    try res.appendSlice(strings[0]);
+
+    for (1..strings.len) |i| {
+        try std.fmt.format(res.writer(), "{s}{s}", .{ separator, strings[i] });
+    }
+    return res;
+}
+
 test "Join strings" {
     var strings = std.ArrayList(String).init(std.testing.allocator);
     defer strings.deinit();
@@ -258,16 +298,16 @@ test "Join strings" {
     try std.testing.expectEqualStrings(buffer.items, "One< | >Two< | >Three");
 }
 
-// Tests correct lines splitting. In case of error of 1 character offset, check if your files do not end with CRLF instead of LF ...
-test "For lines" {
-    const lines_count = try for_lines(usize, "problems/sample.txt", count_lines);
-    const lines_len = try for_lines(usize, "problems/sample.txt", first_line_len);
-    const lines_len_alloc = try for_lines_allocating(usize, std.testing.allocator, "problems/sample.txt", first_line_len_alloc);
-    const lines_len_alloc_03 = try for_lines_allocating(usize, std.testing.allocator, "problems/03.txt", first_line_len_alloc);
-    try std.testing.expectEqual(@as(usize, 2), lines_count);
-    try std.testing.expectEqual(@as(usize, 9), lines_len);
-    try std.testing.expectEqual(@as(usize, 9), lines_len_alloc);
-    try std.testing.expectEqual(@as(usize, 140), lines_len_alloc_03);
+pub fn split_str_exn(allocator: std.mem.Allocator, s: String, comptime delimiter: String) std.ArrayList(String) {
+    return split_str(allocator, s, delimiter) catch unreachable;
+}
+
+pub fn int_of_string_exn(s: String) i32 {
+    return std.fmt.parseInt(i32, s, 10) catch unreachable;
+}
+
+pub fn num_of_string_exn(comptime t: type, s: String) t {
+    return std.fmt.parseInt(t, s, 10) catch unreachable;
 }
 
 fn count_lines(lines: std.ArrayList(String)) usize {
