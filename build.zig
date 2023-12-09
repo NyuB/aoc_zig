@@ -23,11 +23,27 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
     b.installArtifact(exe);
+
+    const ping = b.addExecutable(.{
+        .name = "ping",
+        .root_source_file = .{ .path = "src/ping.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    b.installArtifact(ping);
+
+    const pong = b.addExecutable(.{
+        .name = "pong",
+        .root_source_file = .{ .path = "src/pong.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    pong.linkLibC();
+    b.installArtifact(pong);
 
     // This *creates* a Run step in the build graph, to be executed when another
     // step is evaluated that depends on it. The next line below will establish
