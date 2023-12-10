@@ -10,4 +10,5 @@ comptime {
     _ = @import("aoc_2023_07.zig");
     _ = @import("aoc_2023_08.zig");
     _ = @import("aoc_2023_09.zig");
+    _ = @import("aoc_2023_10.zig");
 }
