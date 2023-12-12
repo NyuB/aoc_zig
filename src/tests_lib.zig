@@ -43,11 +43,11 @@ pub fn for_lines(comptime ReturnType: type, comptime file_path: Path, comptime F
 pub fn for_lines_allocating(comptime ReturnType: type, allocator: std.mem.Allocator, comptime file_path: Path, comptime Fun: *const fn (std.mem.Allocator, std.ArrayList(String)) ReturnType) !ReturnType {
     var file = try std.fs.cwd().openFile(file_path, .{});
     defer file.close();
-    var lines = std.ArrayList(String).init(std.testing.allocator);
+    var lines = std.ArrayList(String).init(allocator);
     defer lines.deinit();
     defer {
         for (lines.items) |line| {
-            std.testing.allocator.free(line);
+            allocator.free(line);
         }
     }
 
