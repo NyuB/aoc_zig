@@ -70,10 +70,10 @@ fn scoreWithFlip(allocator: std.mem.Allocator, grid: []const String) !?uint {
             flip(copy, i, j);
             const s = score(copy, usualScore.horizontal, usualScore.vertical);
             if (s.horizontal != usualScore.horizontal) {
-                if (s.horizontal) |h| return 100 * uint_of_usize(h);
+                if (s.horizontal) |h| return 100 * lib.uint_of_usize(uint, h);
             }
             if (s.vertical != usualScore.vertical) {
-                if (s.vertical) |v| return uint_of_usize(v);
+                if (s.vertical) |v| return lib.uint_of_usize(uint, v);
             }
             flip(copy, i, j);
         }
@@ -110,18 +110,14 @@ const Score = struct {
 
     inline fn max(self: Score) ?uint {
         if (self.horizontal) |h| {
-            return uint_of_usize(h) * 100;
+            return lib.uint_of_usize(uint, h) * 100;
         }
         if (self.vertical) |v| {
-            return uint_of_usize(v);
+            return lib.uint_of_usize(uint, v);
         }
         return null;
     }
 };
-
-fn uint_of_usize(u: usize) uint {
-    return @as(uint, @intCast(u));
-}
 
 // Tests
 

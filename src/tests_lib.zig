@@ -311,6 +311,10 @@ pub fn num_of_string_exn(comptime t: type, s: String) t {
     return std.fmt.parseInt(t, s, 10) catch unreachable;
 }
 
+pub fn uint_of_usize(comptime uint: type, u: usize) uint {
+    return @as(uint, @intCast(u));
+}
+
 fn count_lines(lines: std.ArrayList(String)) usize {
     return lines.items.len;
 }
