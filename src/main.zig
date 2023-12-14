@@ -1,18 +1,7 @@
 const std = @import("std");
-
+const lib = @import("tests_lib.zig");
+const solve = @import("aoc_2023_12.zig").solve_part_two;
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("\nAll your {s} are belong to us.\n", .{"codebase"});
-
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
-
-    try stdout.print("Tests are listed in 'tests.zig'.\n", .{});
-    try stdout.print("\tRun `zig build test` to run the tests.\n", .{});
-
-    try bw.flush(); // don't forget to flush!
+    const res = try lib.for_lines_allocating(u64, std.heap.page_allocator, "problems/12.txt", solve);
+    std.debug.print("Result = {d}\n", .{res});
 }
