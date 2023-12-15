@@ -45,6 +45,18 @@ pub fn build(b: *std.Build) void {
     pong.linkLibC();
     b.installArtifact(pong);
 
+    const template = b.addExecutable(.{
+        .name = "problem_template",
+        .root_source_file = .{ .path = "src/templates/problem_template.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    b.installArtifact(template);
+
+    const template_cmd = b.addRunArtifact(template);
+    const template_step = b.step("problem_template", "Generate a daily problem template: 'zig build problem_template -- <year> <day>'");
+    template_step.dependOn(&template_cmd.step);
+
     // This *creates* a Run step in the build graph, to be executed when another
     // step is evaluated that depends on it. The next line below will establish
     // such a dependency.
@@ -60,6 +72,7 @@ pub fn build(b: *std.Build) void {
     // command itself, like this: `zig build run -- arg1 arg2 etc`
     if (b.args) |args| {
         run_cmd.addArgs(args);
+        template_cmd.addArgs(args);
     }
 
     // This creates a build step. It will be visible in the `zig build --help` menu,
