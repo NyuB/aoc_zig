@@ -16,18 +16,18 @@ pub fn for_lines(comptime ReturnType: type, comptime file_path: Path, comptime F
 
     var buf_reader = std.io.bufferedReader(file.reader());
     var read_stream = buf_reader.reader();
-    var buf_writer: [9000]u8 = undefined;
-    var write_stream = std.io.fixedBufferStream(&buf_writer);
+    var dynamicBuffer = std.ArrayList(u8).init(std.testing.allocator);
+    defer dynamicBuffer.deinit();
 
-    streamUntilEolOrEof(read_stream, write_stream.writer()) catch {};
+    streamUntilEolOrEof(read_stream, dynamicBuffer.writer()) catch {};
     while (true) {
-        const line = write_stream.getWritten();
+        const line = dynamicBuffer.items;
         const line_copy: []u8 = try std.testing.allocator.alloc(u8, line.len);
         std.mem.copy(u8, line_copy, line);
         try lines.append(line_copy);
-        write_stream.reset();
-        streamUntilEolOrEof(read_stream, write_stream.writer()) catch {
-            const lastLine = write_stream.getWritten();
+        dynamicBuffer.clearRetainingCapacity();
+        streamUntilEolOrEof(read_stream, dynamicBuffer.writer()) catch {
+            const lastLine = dynamicBuffer.items;
             if (lastLine.len > 0) {
                 const lastLineCopy: []u8 = try std.testing.allocator.alloc(u8, lastLine.len);
                 std.mem.copy(u8, lastLineCopy, lastLine);
@@ -53,18 +53,18 @@ pub fn for_lines_allocating(comptime ReturnType: type, allocator: std.mem.Alloca
 
     var buf_reader = std.io.bufferedReader(file.reader());
     var read_stream = buf_reader.reader();
-    var buf_writer: [9000]u8 = undefined;
-    var write_stream = std.io.fixedBufferStream(&buf_writer);
+    var dynamicBuffer = std.ArrayList(u8).init(allocator);
+    defer dynamicBuffer.deinit();
 
-    streamUntilEolOrEof(read_stream, write_stream.writer()) catch {};
+    streamUntilEolOrEof(read_stream, dynamicBuffer.writer()) catch {};
     while (true) {
-        const line = write_stream.getWritten();
+        const line = dynamicBuffer.items;
         const line_copy: []u8 = try allocator.alloc(u8, line.len);
         std.mem.copy(u8, line_copy, line);
         try lines.append(line_copy);
-        write_stream.reset();
-        streamUntilEolOrEof(read_stream, write_stream.writer()) catch {
-            const lastLine = write_stream.getWritten();
+        dynamicBuffer.clearRetainingCapacity();
+        streamUntilEolOrEof(read_stream, dynamicBuffer.writer()) catch {
+            const lastLine = dynamicBuffer.items;
             if (lastLine.len > 0) {
                 const lastLineCopy: []u8 = try allocator.alloc(u8, lastLine.len);
                 std.mem.copy(u8, lastLineCopy, lastLine);
