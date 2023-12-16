@@ -16,4 +16,13 @@ comptime {
     _ = @import("aoc_2023_13.zig");
     _ = @import("aoc_2023_14.zig");
     _ = @import("aoc_2023_15.zig");
+    _ = @import("aoc_2023_16.zig");
+}
+
+// Exploratory tests
+comptime {
+    _ = @import("explore.zig");
+    _ = @import("ping.zig");
+    _ = @import("pong.zig");
+    _ = @import("sok.zig");
 }

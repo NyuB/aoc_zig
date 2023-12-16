@@ -34,3 +34,30 @@ const ReorderedData = extern struct { a: i32, c: f32, b: u8, d: bool, e: bool };
 test "even reordered, data size must be a multiple of 8" {
     try expect(@sizeOf(Data) == 16);
 }
+
+test "FreeMe of string" {
+    var s = try makeString(std.testing.allocator, 'A', 12);
+    defer s.deinit();
+    try std.testing.expectEqualStrings("AAAAAAAAAAAA", s.t);
+}
+
+fn makeString(allocator: std.mem.Allocator, c: u8, n: usize) !FreeMe([]const u8) {
+    var res = try allocator.alloc(u8, n);
+    for (0..n) |i| res[i] = c;
+    return FreeMe([]const u8).init(res, allocator);
+}
+
+fn FreeMe(comptime T: type) type {
+    return struct {
+        t: T,
+        allocator: std.mem.Allocator,
+        const Self = @This();
+        fn deinit(self: *Self) void {
+            self.allocator.free(self.t);
+        }
+
+        fn init(t: T, allocator: std.mem.Allocator) Self {
+            return .{ .t = t, .allocator = allocator };
+        }
+    };
+}
