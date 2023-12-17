@@ -8,14 +8,15 @@ const ProblemErrors = error{ AllocationFailed, IllegalInput };
 pub fn solve_part_one(allocator: std.mem.Allocator, lines: std.ArrayList(String)) uint {
     var grid = parseGrid(allocator, lines.items) catch unreachable;
     defer freeGrid(allocator, grid);
-    const res = solve(allocator, grid) catch unreachable;
+    const res = solve(allocator, grid, 0, 3) catch unreachable;
     return res;
 }
 
-pub fn solve_part_two(lines: std.ArrayList(String)) uint {
-    // TODO Process problem input and apply your solver here
-    _ = lines;
-    return 42;
+pub fn solve_part_two(allocator: std.mem.Allocator, lines: std.ArrayList(String)) uint {
+    var grid = parseGrid(allocator, lines.items) catch unreachable;
+    defer freeGrid(allocator, grid);
+    const res = solve(allocator, grid, 4, 10) catch unreachable;
+    return res;
 }
 
 // Caller owns returned memory
@@ -39,11 +40,11 @@ fn freeGrid(allocator: std.mem.Allocator, grid: [][]const uint) void {
     allocator.free(grid);
 }
 
-fn solve(allocator: std.mem.Allocator, grid: []const []const uint) ProblemErrors!uint {
+fn solve(allocator: std.mem.Allocator, grid: []const []const uint, minRepeat: u4, maxRepeat: u4) ProblemErrors!uint {
     const rows = grid.len;
     const cols = if (rows == 0) return ProblemErrors.IllegalInput else grid[0].len;
-    const startDown = Node{ .currentDirection = Direction.Down, .directionRepeat = 1, .pos = Position.make(1, 0), .dist = grid[1][0] };
-    const startRight = Node{ .currentDirection = Direction.Right, .directionRepeat = 1, .pos = Position.make(0, 1), .dist = grid[0][1] };
+    const startDown = Node{ .currentDirection = Direction.Down, .directionRepeat = 1, .pos = Position.make(1, 0), .dist = grid[1][0], .minRepeat = minRepeat, .maxRepeat = maxRepeat };
+    const startRight = Node{ .currentDirection = Direction.Right, .directionRepeat = 1, .pos = Position.make(0, 1), .dist = grid[0][1], .minRepeat = minRepeat, .maxRepeat = maxRepeat };
     var q = Node.BinaryHeap.init(allocator, Position.make(rows - 1, cols - 1));
     q.add(startDown) catch return ProblemErrors.AllocationFailed;
     q.add(startRight) catch return ProblemErrors.AllocationFailed;
@@ -52,7 +53,7 @@ fn solve(allocator: std.mem.Allocator, grid: []const []const uint) ProblemErrors
     defer check.deinit();
 
     while (q.removeOrNull()) |n| {
-        if (n.pos.i == rows - 1 and n.pos.j == cols - 1) return n.dist;
+        if (n.directionRepeat >= minRepeat and n.pos.i == rows - 1 and n.pos.j == cols - 1) return n.dist;
         for (n.neighbours(grid)) |opt| {
             if (opt) |next| {
                 if (check.get(next)) |already| {
@@ -76,13 +77,15 @@ const NodeVisitCheck = struct {
     rows: usize,
     cols: usize,
 
+    const RepeatCardinality: usize = 11;
+
     fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) ProblemErrors!NodeVisitCheck {
-        var check = allocator.alloc(?uint, rows * cols * 4 * 4) catch return ProblemErrors.AllocationFailed;
+        var check = allocator.alloc(?uint, rows * cols * DirectionCardinality * RepeatCardinality) catch return ProblemErrors.AllocationFailed;
         for (0..rows) |i| {
             for (0..cols) |j| {
-                for (0..4) |dir| {
-                    for (0..4) |repeat| {
-                        check[i * cols + j * 4 + dir * 4 + repeat] = null;
+                for (0..DirectionCardinality) |dir| {
+                    for (0..RepeatCardinality) |repeat| {
+                        check[i * cols + j * DirectionCardinality + dir * RepeatCardinality + repeat] = null;
                     }
                 }
             }
@@ -99,11 +102,9 @@ const NodeVisitCheck = struct {
     }
 
     inline fn checkIndex(self: NodeVisitCheck, next: Node) usize {
-        const perDirection = 4;
-        const perCol = perDirection * 4;
+        const perCol = RepeatCardinality * DirectionCardinality;
         const perRow = perCol * self.cols;
-
-        return next.pos.i * perRow + next.pos.j * perCol + @as(usize, next.currentDirection.idx()) * perDirection + next.directionRepeat;
+        return next.pos.i * perRow + next.pos.j * perCol + @as(usize, next.currentDirection.idx()) * RepeatCardinality + next.directionRepeat;
     }
 
     fn deinit(self: *NodeVisitCheck) void {
@@ -113,13 +114,16 @@ const NodeVisitCheck = struct {
 
 const Node = struct {
     currentDirection: Direction,
-    directionRepeat: u2,
+    directionRepeat: u4,
+    minRepeat: u4,
+    maxRepeat: u4,
     pos: Position,
     dist: uint,
 
+    /// Context is the target of the path finding
     const BinaryHeap = std.PriorityQueue(Node, Position, compare);
 
-    // manhattan heuristic for AStar
+    /// Using manhattan distance to target as heuristic for AStar
     fn compare(target: Position, a: Node, b: Node) std.math.Order {
         const aToTarget = @max(a.pos.i, target.i) - @min(a.pos.i, target.i) + @max(a.pos.j, target.j) - @min(a.pos.j, target.j);
         const bToTarget = @max(b.pos.i, target.i) - @min(b.pos.i, target.i) + @max(b.pos.j, target.j) - @min(b.pos.j, target.j);
@@ -128,14 +132,15 @@ const Node = struct {
 
     fn neighbours(self: Node, grid: []const []const uint) [4]?Node {
         var res = [4]?Node{ null, null, null, null };
-        for (Direction.all, 0..) |d, i| {
+        for (Direction.all) |d| {
             if (!d.opposite().eql(self.currentDirection)) {
-                if (!d.eql(self.currentDirection) or self.directionRepeat < 3) {
+                const changeDirection = !d.eql(self.currentDirection);
+                if ((changeDirection and self.directionRepeat >= self.minRepeat) or (!changeDirection and self.directionRepeat < self.maxRepeat)) {
                     const repeat = if (d.eql(self.currentDirection)) self.directionRepeat + 1 else 1;
                     const posOpt = movePosition(self.pos, d);
                     if (posOpt) |pos| {
                         if (pos.i >= 0 and pos.j >= 0 and pos.i < grid.len and pos.j < grid[0].len) {
-                            res[i] = Node{ .currentDirection = d, .directionRepeat = repeat, .pos = pos, .dist = self.dist + grid[pos.i][pos.j] };
+                            res[d.idx()] = Node{ .currentDirection = d, .directionRepeat = repeat, .pos = pos, .dist = self.dist + grid[pos.i][pos.j], .minRepeat = self.minRepeat, .maxRepeat = self.maxRepeat };
                         }
                     }
                 }
@@ -154,6 +159,7 @@ const Position = struct {
     }
 };
 
+const DirectionCardinality = 4;
 const Direction = union(enum(u2)) {
     Left = 0,
     Up = 1,
@@ -181,7 +187,7 @@ const Direction = union(enum(u2)) {
         return self.idx() == other.idx();
     }
 
-    const all = [4]Direction{ .Left, .Up, .Right, .Down };
+    const all = [DirectionCardinality]Direction{ .Left, .Up, .Right, .Down };
 };
 
 fn movePosition(pos: Position, dir: Direction) ?Position {
@@ -197,12 +203,12 @@ fn movePosition(pos: Position, dir: Direction) ?Position {
 
 test "Golden Test Part One" {
     const res = try lib.for_lines_allocating(uint, std.testing.allocator, "problems/17.txt", solve_part_one);
-    try std.testing.expectEqual(@as(uint, 0), res);
+    try std.testing.expectEqual(@as(uint, 845), res);
 }
 
 test "Golden Test Part Two" {
-    // TODO Test solve_part_two on your actual problem input here
-    // You may use for_lines or for_lines_allocating from tests_lib.zig
+    const res = try lib.for_lines_allocating(uint, std.testing.allocator, "problems/17.txt", solve_part_two);
+    try std.testing.expectEqual(@as(uint, 993), res);
 }
 
 test "Example Part One" {
@@ -226,9 +232,33 @@ test "Example Part One" {
 }
 
 test "Example Part Two" {
-    // TODO Test solve_part_two on the problem example here
     var lines = std.ArrayList(String).init(std.testing.allocator);
+    try lines.append("2413432311323");
+    try lines.append("3215453535623");
+    try lines.append("3255245654254");
+    try lines.append("3446585845452");
+    try lines.append("4546657867536");
+    try lines.append("1438598798454");
+    try lines.append("4457876987766");
+    try lines.append("3637877979653");
+    try lines.append("4654967986887");
+    try lines.append("4564679986453");
+    try lines.append("1224686865563");
+    try lines.append("2546548887735");
+    try lines.append("4322674655533");
     defer lines.deinit();
-    const res = solve_part_two(lines);
-    try std.testing.expectEqual(@as(uint, 42), res);
+    const res = solve_part_two(std.testing.allocator, lines);
+    try std.testing.expectEqual(@as(uint, 94), res);
+}
+
+test "Example Bis Part Two" {
+    var lines = std.ArrayList(String).init(std.testing.allocator);
+    try lines.append("111111111111");
+    try lines.append("999999999991");
+    try lines.append("999999999991");
+    try lines.append("999999999991");
+    try lines.append("999999999991");
+    defer lines.deinit();
+    const res = solve_part_two(std.testing.allocator, lines);
+    try std.testing.expectEqual(@as(uint, 71), res);
 }
