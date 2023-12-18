@@ -6,39 +6,44 @@ const uint = u32;
 const ProblemErrors = error{ AllocationFailed, IllegalInput };
 
 pub fn solve_part_one(allocator: std.mem.Allocator, lines: std.ArrayList(String)) uint {
-    var grid = parseGrid(allocator, lines.items) catch unreachable;
-    defer freeGrid(allocator, grid);
-    const res = solve(allocator, grid, 0, 3) catch unreachable;
+    var grid = Grid.parse(allocator, lines.items) catch unreachable;
+    defer grid.deinit();
+    const res = solve(allocator, grid.items, 0, 3) catch unreachable;
     return res;
 }
 
 pub fn solve_part_two(allocator: std.mem.Allocator, lines: std.ArrayList(String)) uint {
-    var grid = parseGrid(allocator, lines.items) catch unreachable;
-    defer freeGrid(allocator, grid);
-    const res = solve(allocator, grid, 4, 10) catch unreachable;
+    var grid = Grid.parse(allocator, lines.items) catch unreachable;
+    defer grid.deinit();
+    const res = solve(allocator, grid.items, 4, 10) catch unreachable;
     return res;
 }
 
-// Caller owns returned memory
-fn parseGrid(allocator: std.mem.Allocator, lines: []const []const u8) ![][]const uint {
-    const rows = lines.len;
-    const cols = if (rows == 0) 0 else lines[0].len;
-    var res = allocator.alloc([]uint, rows) catch return ProblemErrors.AllocationFailed;
-    for (0..rows) |i| {
-        res[i] = allocator.alloc(uint, cols) catch return ProblemErrors.AllocationFailed;
-        for (0..cols) |j| {
-            res[i][j] = std.fmt.parseInt(uint, lines[i][j .. j + 1], 10) catch return ProblemErrors.IllegalInput;
+const Grid = struct {
+    items: [][]const uint,
+    arena: std.heap.ArenaAllocator,
+
+    /// Caller must call **`Grid.deinit`** on the result
+    fn parse(allocator: std.mem.Allocator, lines: []const []const u8) ProblemErrors!Grid {
+        const rows = lines.len;
+        const cols = if (rows == 0) 0 else lines[0].len;
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        var arenaAllocator = arena.allocator();
+
+        var res = arenaAllocator.alloc([]uint, rows) catch return ProblemErrors.AllocationFailed;
+        for (0..rows) |i| {
+            res[i] = arenaAllocator.alloc(uint, cols) catch return ProblemErrors.AllocationFailed;
+            for (0..cols) |j| {
+                res[i][j] = std.fmt.parseInt(uint, lines[i][j .. j + 1], 10) catch return ProblemErrors.IllegalInput;
+            }
         }
+        return Grid{ .items = res, .arena = arena };
     }
-    return res;
-}
 
-fn freeGrid(allocator: std.mem.Allocator, grid: [][]const uint) void {
-    for (grid) |row| {
-        allocator.free(row);
+    fn deinit(self: *Grid) void {
+        self.arena.deinit();
     }
-    allocator.free(grid);
-}
+};
 
 fn solve(allocator: std.mem.Allocator, grid: []const []const uint, minRepeat: u4, maxRepeat: u4) ProblemErrors!uint {
     const rows = grid.len;
