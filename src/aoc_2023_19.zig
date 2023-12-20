@@ -56,26 +56,58 @@ fn countAcceptable(allocator: std.mem.Allocator, program: Program, searchStart: 
                 },
             },
             Statement.Condition => |ifte| {
-                var split = switch (ifte.op) {
-                    .Gt => xmas.splitGt(ifte.n, ifte.id),
-                    .Lt => xmas.splitLt(ifte.n, ifte.id),
-                    .Eq => xmas.splitEq(ifte.n, ifte.id),
-                };
+                var split = XmasSplit.make(ifte, xmas);
 
                 switch (ifte.ifTrue) {
-                    .Accept => res += split[0].combinatory(),
+                    .Accept => res += split.ok.combinatory(),
                     .Reject => {},
                     .GoTo => |target| {
-                        q.append(jumpSearchToProgramId(split[0], target)) catch return ProblemErrors.AllocationFailed;
+                        q.append(jumpSearchToProgramId(split.ok, target)) catch return ProblemErrors.AllocationFailed;
                     },
                 }
-                split[1].programIndex += 1;
-                q.append(split[1]) catch return ProblemErrors.AllocationFailed;
+
+                split.ko.programIndex += 1;
+                q.append(split.ko) catch return ProblemErrors.AllocationFailed;
+
+                if (split.koOpt) |*ko| {
+                    ko.programIndex += 1;
+                    q.append(ko.*) catch return ProblemErrors.AllocationFailed;
+                }
             },
         }
     }
     return res;
 }
+
+const XmasSplit = struct {
+    ok: XmasSearch,
+    ko: XmasSearch,
+    koOpt: ?XmasSearch,
+
+    fn make(ifte: IfThenElse, xmas: XmasSearch) XmasSplit {
+        var res: XmasSplit = undefined;
+        res.koOpt = null;
+        switch (ifte.op) {
+            .Gt => {
+                const split = xmas.splitGt(ifte.n, ifte.id);
+                res.ok = split[0];
+                res.ko = split[1];
+            },
+            .Lt => {
+                const split = xmas.splitLt(ifte.n, ifte.id);
+                res.ok = split[0];
+                res.ko = split[1];
+            },
+            .Eq => {
+                const split = xmas.splitEq(ifte.n, ifte.id);
+                res.ok = split[0];
+                res.ko = split[1];
+                res.koOpt = split[2];
+            },
+        }
+        return res;
+    }
+};
 
 fn jumpSearchToProgramId(xmas: XmasSearch, id: String) XmasSearch {
     return XmasSearch{ .xRange = xmas.xRange, .mRange = xmas.mRange, .aRange = xmas.aRange, .sRange = xmas.sRange, .programId = id, .programIndex = 0 };
@@ -264,11 +296,20 @@ const Range = struct {
     start: uint,
     end: uint,
 
-    fn splitEq(self: Range, n: uint) [2]Range {
+    /// Returns a triplet containing:
+    ///
+    /// at index [0] the matching singleton range containing only `n`  or an empty range
+    ///
+    /// at index [1] the 'left range' lower than `n`
+    ///
+    /// at index [1] the 'right range' greater than `n`
+    fn splitEq(self: Range, n: uint) [3]Range {
         if (n >= self.start and n < self.end) {
-            return [2]Range{ Range{ .start = n, .end = n + 1 }, self.makeEmpty() };
+            return [3]Range{ Range{ .start = n, .end = n + 1 }, Range{ .start = self.start, .end = n }, Range{ .start = n + 1, .end = self.end } };
+        } else if (self.start > n) {
+            return [3]Range{ self.makeEmpty(), self.makeEmpty(), self };
         } else {
-            return [2]Range{ self.makeEmpty(), self.makeEmpty() };
+            return [3]Range{ self.makeEmpty(), self, self.makeEmpty() };
         }
     }
 
@@ -328,33 +369,39 @@ const XmasSearch = struct {
         return self.combinatory() == 0;
     }
 
-    fn splitEq(self: XmasSearch, n: uint, id: u8) [2]XmasSearch {
+    /// See `Range.splitEq()`
+    fn splitEq(self: XmasSearch, n: uint, id: u8) [3]XmasSearch {
+        var copyEq = self;
         var copyLeft = self;
         var copyRight = self;
         switch (id) {
             'x' => {
                 const split = self.xRange.splitEq(n);
-                copyLeft.xRange = split[0];
-                copyRight.xRange = split[1];
+                copyEq.xRange = split[0];
+                copyLeft.xRange = split[1];
+                copyRight.xRange = split[2];
             },
             'm' => {
                 const split = self.mRange.splitEq(n);
-                copyLeft.mRange = split[0];
-                copyRight.mRange = split[1];
+                copyEq.mRange = split[0];
+                copyLeft.mRange = split[1];
+                copyRight.mRange = split[2];
             },
             'a' => {
                 const split = self.aRange.splitEq(n);
-                copyLeft.aRange = split[0];
-                copyRight.aRange = split[1];
+                copyEq.aRange = split[0];
+                copyLeft.aRange = split[1];
+                copyRight.aRange = split[2];
             },
             's' => {
                 const split = self.sRange.splitEq(n);
-                copyLeft.sRange = split[0];
-                copyRight.sRange = split[1];
+                copyEq.sRange = split[0];
+                copyLeft.sRange = split[1];
+                copyRight.sRange = split[2];
             },
             else => unreachable,
         }
-        return [2]XmasSearch{ copyLeft, copyRight };
+        return [3]XmasSearch{ copyEq, copyLeft, copyRight };
     }
 
     fn splitGt(self: XmasSearch, n: uint, id: u8) [2]XmasSearch {
@@ -510,7 +557,7 @@ test "Multiple possible values" {
 
 test "With jump" {
     const lines = [_]String{
-        "in{x>1:reject,accept}",
+        "in{x=1:reject,accept}",
         "accept{A}",
         "reject{R}",
     };
