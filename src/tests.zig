@@ -21,6 +21,7 @@ comptime {
     _ = @import("aoc_2023_18.zig");
     _ = @import("aoc_2023_19.zig");
     _ = @import("aoc_2023_20.zig");
+    _ = @import("aoc_2023_21.zig");
 }
 
 // Exploratory tests
