@@ -28,23 +28,6 @@ pub fn build(b: *std.Build) void {
     // step when running `zig build`).
     b.installArtifact(exe);
 
-    const ping = b.addExecutable(.{
-        .name = "ping",
-        .root_source_file = .{ .path = "src/ping.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    b.installArtifact(ping);
-
-    const pong = b.addExecutable(.{
-        .name = "pong",
-        .root_source_file = .{ .path = "src/pong.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    pong.linkLibC();
-    b.installArtifact(pong);
-
     const template = b.addExecutable(.{
         .name = "problem_template",
         .root_source_file = .{ .path = "src/templates/problem_template.zig" },

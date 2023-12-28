@@ -22,12 +22,10 @@ comptime {
     _ = @import("aoc_2023_19.zig");
     _ = @import("aoc_2023_20.zig");
     _ = @import("aoc_2023_21.zig");
+    _ = @import("aoc_2023_25.zig");
 }
 
 // Exploratory tests
 comptime {
     _ = @import("explore.zig");
-    _ = @import("ping.zig");
-    _ = @import("pong.zig");
-    _ = @import("sok.zig");
 }
