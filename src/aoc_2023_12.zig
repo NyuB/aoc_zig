@@ -19,15 +19,14 @@ pub fn solve_part_one(allocator: std.mem.Allocator, lines: std.ArrayList(String)
             groups[i] = g;
         }
         const search = SearchItem.make(groups, line);
-        res += search.countOptimized() orelse 0;
+        res += search.countArrangements() orelse 0;
     }
     return res;
 }
 
 pub fn solve_part_two(allocator: std.mem.Allocator, lines: std.ArrayList(String)) uint {
     var res: uint = 0;
-    for (lines.items, 0..) |l, li| {
-        std.debug.print("Processing line {d}/{d}...\n", .{ li + 1, lines.items.len });
+    for (lines.items) |l| {
         const lineGroups = lib.split_n_str(2, l, " ");
 
         const line = lineGroups[0] orelse unreachable;
@@ -48,7 +47,7 @@ pub fn solve_part_two(allocator: std.mem.Allocator, lines: std.ArrayList(String)
         defer allocator.free(duplicatedGroups);
 
         const search = SearchItem.make(duplicatedGroups, duplicatedLine);
-        res += search.countArrangements(allocator) catch unreachable;
+        res += search.countArrangements() orelse 0;
     }
     return res;
 }
@@ -71,24 +70,7 @@ const SearchItem = struct {
         return make(self.groups, nextLine);
     }
 
-    fn countArrangements(self: SearchItem, allocator: std.mem.Allocator) ProblemErrors!uint {
-        var q = std.ArrayList(SearchItem).init(allocator);
-        defer q.deinit();
-        q.append(self) catch return ProblemErrors.AllocationFailed;
-        var res: uint = 0;
-        while (q.popOrNull()) |*item| {
-            if (item.over()) {
-                res += 1;
-            } else if (item.groups.len > 0) {
-                var nextItems = try item.next(allocator);
-                defer nextItems.deinit();
-                q.appendSlice(nextItems.items) catch return ProblemErrors.AllocationFailed;
-            }
-        }
-        return res;
-    }
-
-    fn countOptimized(self: SearchItem) ?uint {
+    fn countArrangements(self: SearchItem) ?uint {
         if (self.groups.len == 0) {
             return if (self.over()) 1 else null;
         }
@@ -111,8 +93,8 @@ const SearchItem = struct {
     fn possibleProducts(left: SearchItem, right: SearchItem) ?uint {
         const first = if (left.groups.len < right.groups.len) left else right;
         const second = if (left.groups.len < right.groups.len) right else left;
-        if (first.countOptimized()) |f| {
-            if (second.countOptimized()) |s| {
+        if (first.countArrangements()) |f| {
+            if (second.countArrangements()) |s| {
                 return f * s;
             }
         }
@@ -133,16 +115,21 @@ const SearchItem = struct {
         return SearchItem.make(groups, line);
     }
 
+    /// Select the biggest group to reduce search space as much as possible
+    ///
+    /// If all groups are of equal lengths, select the middle index to split search space
     fn maxGroupIndex(self: SearchItem) usize {
         var best = self.groups[0];
         var res: usize = 0;
+        var foundBest = false;
         for (self.groups, 0..) |g, i| {
             if (g > best) {
                 best = g;
                 res = i;
+                foundBest = true;
             }
         }
-        return res;
+        return if (foundBest) res else (self.groups.len / 2);
     }
 
     fn sumGroups(self: SearchItem) uint {
@@ -244,10 +231,10 @@ test "Golden Test Part One" {
     try std.testing.expectEqual(@as(uint, 7716), res);
 }
 
-// test "Golden Test Part Two" {
-//     const res = try lib.for_lines_allocating(uint, std.testing.allocator, "problems/12.txt", solve_part_two);
-//     try std.testing.expectEqual(@as(uint, 0), res);
-// }
+test "Golden Test Part Two" {
+    const res = try lib.for_lines_allocating(uint, std.testing.allocator, "problems/12.txt", solve_part_two);
+    try std.testing.expectEqual(@as(uint, 18716325559999), res);
+}
 
 test "Example Part One" {
     var lines = std.ArrayList(String).init(std.testing.allocator);
@@ -262,18 +249,18 @@ test "Example Part One" {
     try std.testing.expectEqual(@as(uint, 21), res);
 }
 
-// test "Example Part Two" {
-//     var lines = std.ArrayList(String).init(std.testing.allocator);
-//     defer lines.deinit();
-//     try lines.append("???.### 1,1,3");
-//     try lines.append(".??..??...?##. 1,1,3");
-//     try lines.append("?#?#?#?#?#?#?#? 1,3,1,6");
-//     try lines.append("????.#...#... 4,1,1");
-//     try lines.append("????.######..#####. 1,6,5");
-//     try lines.append("?###???????? 3,2,1");
-//     const res = solve_part_two(std.testing.allocator, lines);
-//     try std.testing.expectEqual(@as(uint, 525152), res);
-// }
+test "Example Part Two" {
+    var lines = std.ArrayList(String).init(std.testing.allocator);
+    defer lines.deinit();
+    try lines.append("???.### 1,1,3");
+    try lines.append(".??..??...?##. 1,1,3");
+    try lines.append("?#?#?#?#?#?#?#? 1,3,1,6");
+    try lines.append("????.#...#... 4,1,1");
+    try lines.append("????.######..#####. 1,6,5");
+    try lines.append("?###???????? 3,2,1");
+    const res = solve_part_two(std.testing.allocator, lines);
+    try std.testing.expectEqual(@as(uint, 525152), res);
+}
 
 test "???.### 1,1,3 => 1" {
     try expectArrangementEquals("???.### 1,1,3", 1);

@@ -6,7 +6,10 @@ fmt:
 	zig fmt build.zig
 
 test:
-	zig build test
+	zig build test-quick
+ifeq ($(RUN_SLOW_TESTS), true)
+	zig build -Doptimize=ReleaseFast test-slow
+endif 
 
 run:
 	zig build run
