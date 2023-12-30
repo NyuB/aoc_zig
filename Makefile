@@ -1,18 +1,22 @@
+ZIG=zig
+
 all: fmt build test
+
 build:
-	zig build
+	$(ZIG) build
+
 fmt:
-	zig fmt src
-	zig fmt build.zig
+	$(ZIG) fmt src
+	$(ZIG) fmt build.zig
 
 test:
-	zig build test-quick
+	$(ZIG) build test-quick
 ifeq ($(RUN_SLOW_TESTS), true)
-	zig build -Doptimize=ReleaseFast test-slow
+	$(ZIG) build -Doptimize=ReleaseFast test-slow
 endif 
 
 run:
-	zig build run
+	$(ZIG) build run
 
 explore:
-	zig test src/explore.zig
+	$(ZIG) test src/explore.zig
